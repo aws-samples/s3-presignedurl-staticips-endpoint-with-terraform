@@ -1,0 +1,37 @@
+generated*/
+environment/
+_backup/
+
+# Ignore Terraform's state files
+*.tfstate
+*.tfstate.backup
+
+# Ignore the .terraform directory
+**/.terraform/
+
+# Ignore any override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ignore any generated plans
+*.tfplan
+*.tfout
+
+# Ignore provider plugin binaries
+terraform-provider-*
+
+# Ignore any files and directories which start with .terraform
+**/.terraform/*
+
+# Ignore any sensitive or private information
+*.pem
+*.tfvars
+*.tfvars.json
+*.env
+
+# Ignore log files
+*.log
+*.lock.hcl
+terraform/.DS_Store
