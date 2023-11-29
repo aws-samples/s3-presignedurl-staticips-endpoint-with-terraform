@@ -23,7 +23,7 @@ override.tf.json
 terraform-provider-*
 
 # Ignore any files and directories which start with .terraform
-**/.terraform/*
+**/.terraform*
 
 # Ignore any sensitive or private information
 *.pem

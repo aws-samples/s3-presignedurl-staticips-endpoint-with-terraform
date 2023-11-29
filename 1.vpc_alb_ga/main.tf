@@ -69,26 +69,6 @@ resource "aws_globalaccelerator_accelerator" "global_accelerator" {
   ip_address_type = "IPV4"
 }
 
-resource "aws_globalaccelerator_listener" "ga_listener_80" {
-  accelerator_arn = aws_globalaccelerator_accelerator.global_accelerator.id
-  protocol        = "TCP"
-
-  port_range {
-    from_port = 80
-    to_port   = 80
-  }
-}
-
-resource "aws_globalaccelerator_listener" "ga_listener_443" {
-  accelerator_arn = aws_globalaccelerator_accelerator.global_accelerator.id
-  protocol        = "TCP"
-
-  port_range {
-    from_port = 443
-    to_port   = 443
-  }
-}
-
 # SG for ALB routing to API
 resource "aws_security_group" "sg_alb_to_api_endpoint" {
   name        = upper("${var.environment_name}-SG-ALB-API")
@@ -222,7 +202,7 @@ resource "aws_lb_target_group" "alb_api_endpoint_tg" {
 resource "aws_lb_target_group" "alb_s3_endpoint_tg" {
   target_type      = "ip"
   name             = upper("${var.environment_name}-TG-S3-ENDPOINT")
-  port             = "80"
+  port             = "443"
   protocol         = "HTTP"
   protocol_version = "HTTP1"
   vpc_id           = aws_vpc.test_vpc.id
@@ -240,32 +220,12 @@ resource "aws_lb_target_group" "alb_s3_endpoint_tg" {
   }
 }
 
-# GA to ALB Endpoint
-resource "aws_globalaccelerator_endpoint_group" "ga_endpoint_group_80" {
-  listener_arn = aws_globalaccelerator_listener.ga_listener_80.id
-
-  endpoint_configuration {
-    client_ip_preservation_enabled = true
-    endpoint_id                    = aws_lb.alb_to_api_endpoint.arn
-    weight                         = 100
-  }
-}
-resource "aws_globalaccelerator_endpoint_group" "ga_endpoint_group_443" {
-  listener_arn = aws_globalaccelerator_listener.ga_listener_443.id
-
-  endpoint_configuration {
-    client_ip_preservation_enabled = true
-    endpoint_id                    = aws_lb.alb_to_api_endpoint.arn
-    weight                         = 100
-  }
-}
-
 resource "aws_lb_listener" "alb_api_endpoint_listener_80" {
   default_action {
     order = "1"
 
     redirect {
-      host        = "jun.${var.domain}"
+      host        = "#{host}"
       path        = "/#{path}"
       port        = "443"
       protocol    = "HTTPS"
@@ -290,13 +250,23 @@ data "aws_acm_certificate" "default_cert" {
 }
 
 #443 port listener
-resource "aws_lb_listener" "alb_api_endpoint_listener_443" {
+resource "aws_lb_listener" "alb_listener" {
   certificate_arn = data.aws_acm_certificate.default_cert.arn
 
+  # default_action {
+  #   order            = "1"
+  #   target_group_arn = aws_lb_target_group.alb_api_endpoint_tg.arn
+  #   type             = "forward"
+  # }
+
   default_action {
-    order            = "1"
-    target_group_arn = aws_lb_target_group.alb_api_endpoint_tg.arn
-    type             = "forward"
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Nothing to see here"
+      status_code  = "404"
+    }
   }
 
   load_balancer_arn = aws_lb.alb_to_api_endpoint.arn
@@ -305,9 +275,25 @@ resource "aws_lb_listener" "alb_api_endpoint_listener_443" {
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
 }
 
-resource "aws_lb_listener_rule" "alb_s3_endpoint_listener_443" {
-  listener_arn = aws_lb_listener.alb_api_endpoint_listener_443.arn
+resource "aws_lb_listener_rule" "alb_api_endpoint_listener_443" {
+  listener_arn = aws_lb_listener.alb_listener.arn
   priority     = 1
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.alb_api_endpoint_tg.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/presign/*"]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "alb_s3_endpoint_listener_443" {
+  listener_arn = aws_lb_listener.alb_listener.arn
+  priority     = 2
 
   action {
     type             = "forward"
@@ -315,9 +301,8 @@ resource "aws_lb_listener_rule" "alb_s3_endpoint_listener_443" {
   }
 
   condition {
-    host_header {
-      # ex) examplebucket2-s3.testdomain.com
-      values = ["${var.s3_bucket_prefix}.${var.domain}"]
+    path_pattern {
+      values = ["/objects/*"]
     }
   }
 }

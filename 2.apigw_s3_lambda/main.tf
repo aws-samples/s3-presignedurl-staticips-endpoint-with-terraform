@@ -11,20 +11,15 @@ data "aws_globalaccelerator_accelerator" "global_accelerator" {
 
 resource "aws_route53_record" "www" {
   zone_id = data.aws_route53_zone.public_domain_zone.zone_id
-  name    = "jun.${var.domain}"
-  type    = "A"
-  ttl     = 300
-  records = data.aws_globalaccelerator_accelerator.global_accelerator.ip_sets[0].ip_addresses
-}
-
-resource "aws_route53_record" "www2" {
-  zone_id = data.aws_route53_zone.public_domain_zone.zone_id
   name    = "${var.s3_bucket_prefix}.${var.domain}"
   type    = "A"
   ttl     = 300
   records = data.aws_globalaccelerator_accelerator.global_accelerator.ip_sets[0].ip_addresses
 }
 
+data "aws_lb" "alb_to_api_endpoint" {
+  name               = upper("${var.environment_name}-ALB-API")
+}
 
 #Retrive Private IPs of Endpoints which made from 1.ga_alb
 #Attach ALB target group to Endpoint private IPs
@@ -77,12 +72,52 @@ resource "aws_lb_target_group_attachment" "alb_s3_endpoint_tg_attach" {
   for_each         = data.aws_network_interface.s3_endpoint_eni
   target_group_arn = data.aws_lb_target_group.alb_s3_endpoint_tg.arn
   target_id        = each.value.private_ip
-  port             = 80
+  port             = 443
+}
+
+# GA to ALB Endpoint
+resource "aws_globalaccelerator_listener" "ga_listener_80" {
+  accelerator_arn = data.aws_globalaccelerator_accelerator.global_accelerator.id
+  protocol        = "TCP"
+
+  port_range {
+    from_port = 80
+    to_port   = 80
+  }
+}
+
+resource "aws_globalaccelerator_listener" "ga_listener_443" {
+  accelerator_arn = data.aws_globalaccelerator_accelerator.global_accelerator.id
+  protocol        = "TCP"
+
+  port_range {
+    from_port = 443
+    to_port   = 443
+  }
+}
+
+resource "aws_globalaccelerator_endpoint_group" "ga_endpoint_group_80" {
+  listener_arn = aws_globalaccelerator_listener.ga_listener_80.id
+
+  endpoint_configuration {
+    client_ip_preservation_enabled = true
+    endpoint_id                    = data.aws_lb.alb_to_api_endpoint.arn
+    weight                         = 100
+  }
+}
+resource "aws_globalaccelerator_endpoint_group" "ga_endpoint_group_443" {
+  listener_arn = aws_globalaccelerator_listener.ga_listener_443.id
+
+  endpoint_configuration {
+    client_ip_preservation_enabled = true
+    endpoint_id                    = data.aws_lb.alb_to_api_endpoint.arn
+    weight                         = 100
+  }
 }
 
 # S3 Bucket
 resource "aws_s3_bucket" "s3_bucket" {
-  bucket = "${var.s3_bucket_prefix}.s3.${var.domain}"
+  bucket = "${var.s3_bucket_prefix}.${var.domain}"
 
 }
 
@@ -173,7 +208,7 @@ resource "aws_lambda_function" "s3_report_url" {
 
   environment {
     variables = {
-      BUCKET_NAME = "${var.s3_bucket_prefix}.s3.${var.domain}"
+      BUCKET_NAME = "${var.s3_bucket_prefix}.${var.domain}"
     }
   }
 }
@@ -246,70 +281,56 @@ resource "aws_api_gateway_rest_api_policy" "rest_api_policy" {
 # }
 
 # API Gateway resource, method, response, integration
-# /external
-resource "aws_api_gateway_resource" "api_resource_external" {
+# /{proxy}
+resource "aws_api_gateway_resource" "api_resource_proxy" {
   parent_id   = aws_api_gateway_rest_api.rest_api.root_resource_id
-  path_part   = "external"
+  path_part   = "{proxy+}"
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
 }
 
-# /external/report
-resource "aws_api_gateway_resource" "api_resource_report" {
-  parent_id   = aws_api_gateway_resource.api_resource_external.id
-  path_part   = "report"
-  rest_api_id = aws_api_gateway_rest_api.rest_api.id
-}
-
-# /external/report/{testId}
-resource "aws_api_gateway_resource" "api_resource_testid" {
-  parent_id   = aws_api_gateway_resource.api_resource_report.id
-  path_part   = "{testId}"
-  rest_api_id = aws_api_gateway_rest_api.rest_api.id
-}
-
-# /external/report/{testId}/GET method
-resource "aws_api_gateway_method" "api_method_testid_get" {
+# /"{proxy+}"/GET method
+resource "aws_api_gateway_method" "api_method_proxy_get" {
   api_key_required = "false"
   authorization    = "NONE"
   http_method      = "GET"
 
-  request_parameters = {
-    "method.request.path.testId" = "true"
-  }
+  # request_parameters = {
+  #   "method.request.path.testId" = "true"
+  # }
 
-  resource_id = aws_api_gateway_resource.api_resource_testid.id
+  resource_id = aws_api_gateway_resource.api_resource_proxy.id
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
 }
 
-# /external/report/{testId}/GET integration
-resource "aws_api_gateway_integration" "api_integration_testid_get" {
-  cache_namespace         = aws_api_gateway_resource.api_resource_testid.id
+# /{testId}/GET integration
+resource "aws_api_gateway_integration" "api_integration_proxy_get" {
+  cache_namespace         = aws_api_gateway_resource.api_resource_proxy.id
   connection_type         = "INTERNET"
   content_handling        = "CONVERT_TO_TEXT"
   http_method             = "GET"
   integration_http_method = "POST"
   passthrough_behavior    = "WHEN_NO_MATCH"
-  resource_id             = aws_api_gateway_resource.api_resource_testid.id
+  resource_id             = aws_api_gateway_resource.api_resource_proxy.id
   rest_api_id             = aws_api_gateway_rest_api.rest_api.id
   timeout_milliseconds    = "29000"
   type                    = "AWS_PROXY"
   uri                     = aws_lambda_function.s3_report_url.invoke_arn
 
-  depends_on = [aws_api_gateway_method.api_method_testid_get]
+  depends_on = [aws_api_gateway_method.api_method_proxy_get]
 }
 
-resource "aws_api_gateway_integration_response" "api_integration_response_testid_get" {
+resource "aws_api_gateway_integration_response" "api_integration_response_proxy_get" {
   http_method = "GET"
-  resource_id = aws_api_gateway_resource.api_resource_testid.id
+  resource_id = aws_api_gateway_resource.api_resource_proxy.id
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
   status_code = "200"
 
-  depends_on = [aws_api_gateway_integration.api_integration_testid_get]
+  depends_on = [aws_api_gateway_integration.api_integration_proxy_get]
 }
 
-resource "aws_api_gateway_method_response" "api_method_response_testid_get" {
+resource "aws_api_gateway_method_response" "api_method_response_proxy_get" {
   http_method = "GET"
-  resource_id = aws_api_gateway_resource.api_resource_testid.id
+  resource_id = aws_api_gateway_resource.api_resource_proxy.id
 
   response_models = {
     "application/json" = "Empty"
@@ -318,7 +339,7 @@ resource "aws_api_gateway_method_response" "api_method_response_testid_get" {
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
   status_code = "200"
 
-  depends_on = [aws_api_gateway_integration_response.api_integration_response_testid_get]
+  depends_on = [aws_api_gateway_integration_response.api_integration_response_proxy_get]
 }
 
 # S3 report lambda permission
@@ -327,7 +348,7 @@ resource "aws_lambda_permission" "s3_report_url_permission" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.s3_report_url.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.rest_api.execution_arn}/*/GET/external/report/*"
+  source_arn    = "${aws_api_gateway_rest_api.rest_api.execution_arn}/*/GET/*"
 }
 
 # CloudWatch Group for enable logging
@@ -350,13 +371,11 @@ resource "aws_api_gateway_deployment" "rest_api_deployment" {
     #       resources will show a difference after the initial implementation.
     #       It will stabilize to only change when resources change afterwards.
     redeployment = sha1(jsonencode([
-      aws_api_gateway_resource.api_resource_external.id,
-      aws_api_gateway_resource.api_resource_report.id,
-      aws_api_gateway_resource.api_resource_testid.id,
-      aws_api_gateway_method.api_method_testid_get,
-      aws_api_gateway_method_response.api_method_response_testid_get.id,
-      aws_api_gateway_integration.api_integration_testid_get.id,
-      aws_api_gateway_integration_response.api_integration_response_testid_get.id
+      aws_api_gateway_resource.api_resource_proxy.id,
+      aws_api_gateway_method.api_method_proxy_get,
+      aws_api_gateway_method_response.api_method_response_proxy_get.id,
+      aws_api_gateway_integration.api_integration_proxy_get.id,
+      aws_api_gateway_integration_response.api_integration_response_proxy_get.id
     ]))
   }
 
@@ -398,7 +417,7 @@ data "aws_acm_certificate" "default_cert" {
 
 resource "aws_api_gateway_domain_name" "custom_domain" {
   regional_certificate_arn = data.aws_acm_certificate.default_cert.arn
-  domain_name     = "jun.${var.domain}"
+  domain_name     = "${var.s3_bucket_prefix}.${var.domain}"
   endpoint_configuration {
     types = ["REGIONAL"]
   }
@@ -408,5 +427,5 @@ resource "aws_api_gateway_base_path_mapping" "api_bpm" {
   api_id      = aws_api_gateway_rest_api.rest_api.id
   stage_name  = aws_api_gateway_stage.rest_api_stage.stage_name
   domain_name = aws_api_gateway_domain_name.custom_domain.domain_name
-  base_path   = "test"
+  # base_path   = "test"
 }
