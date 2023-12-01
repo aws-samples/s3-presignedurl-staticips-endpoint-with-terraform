@@ -72,7 +72,7 @@ resource "aws_lb_target_group_attachment" "alb_s3_endpoint_tg_attach" {
   for_each         = data.aws_network_interface.s3_endpoint_eni
   target_group_arn = data.aws_lb_target_group.alb_s3_endpoint_tg.arn
   target_id        = each.value.private_ip
-  port             = 443
+  port             = 80
 }
 
 # GA to ALB Endpoint
@@ -242,43 +242,11 @@ data "aws_iam_policy_document" "rest_api_policy_document" {
   }
 }
 
-# data "aws_lb" "internal_nlb" {
-#   name = upper("${var.environment_name}-NLB")
-# }
-
-# # VPC Link for connecting API Gateway and Internal NLB
-# resource "aws_api_gateway_vpc_link" "nlb_vpc_link" {
-#   name        = "nlb_vpc_link"
-#   target_arns = ["${data.aws_lb.internal_nlb.arn}"]
-# }
-
 # API Resource
 resource "aws_api_gateway_rest_api_policy" "rest_api_policy" {
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
   policy      = data.aws_iam_policy_document.rest_api_policy_document.json
 }
-
-
-# # Lambda Cognito Authorizer
-# data "aws_lambda_function" "lambda_cognito_authorizer" {
-#   function_name = "${var.environment_name}_cognito_authorizer"
-# }
-
-# resource "aws_api_gateway_authorizer" "authorizer_cognito" {
-#   authorizer_uri  = data.aws_lambda_function.lambda_cognito_authorizer.invoke_arn
-#   identity_source = "method.request.header.Authorization"
-#   name            = "authorizer_cognito"
-#   rest_api_id     = aws_api_gateway_rest_api.rest_api.id
-#   type            = "TOKEN"
-# }
-
-# resource "aws_lambda_permission" "cognito_authorizer_permission" {
-#   statement_id  = "cognito_authorizer_permission"
-#   action        = "lambda:InvokeFunction"
-#   function_name = data.aws_lambda_function.lambda_cognito_authorizer.function_name
-#   principal     = "apigateway.amazonaws.com"
-#   source_arn    = "${aws_api_gateway_rest_api.rest_api.execution_arn}/authorizers/${aws_api_gateway_authorizer.authorizer_cognito.id}"
-# }
 
 # API Gateway resource, method, response, integration
 # /{proxy}
@@ -289,25 +257,21 @@ resource "aws_api_gateway_resource" "api_resource_proxy" {
 }
 
 # /"{proxy+}"/GET method
-resource "aws_api_gateway_method" "api_method_proxy_get" {
+resource "aws_api_gateway_method" "api_method_proxy_any" {
   api_key_required = "false"
   authorization    = "NONE"
-  http_method      = "GET"
-
-  # request_parameters = {
-  #   "method.request.path.testId" = "true"
-  # }
+  http_method      = "ANY"
 
   resource_id = aws_api_gateway_resource.api_resource_proxy.id
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
 }
 
 # /{testId}/GET integration
-resource "aws_api_gateway_integration" "api_integration_proxy_get" {
+resource "aws_api_gateway_integration" "api_integration_proxy_any" {
   cache_namespace         = aws_api_gateway_resource.api_resource_proxy.id
   connection_type         = "INTERNET"
   content_handling        = "CONVERT_TO_TEXT"
-  http_method             = "GET"
+  http_method             = "ANY"
   integration_http_method = "POST"
   passthrough_behavior    = "WHEN_NO_MATCH"
   resource_id             = aws_api_gateway_resource.api_resource_proxy.id
@@ -316,20 +280,20 @@ resource "aws_api_gateway_integration" "api_integration_proxy_get" {
   type                    = "AWS_PROXY"
   uri                     = aws_lambda_function.s3_report_url.invoke_arn
 
-  depends_on = [aws_api_gateway_method.api_method_proxy_get]
+  depends_on = [aws_api_gateway_method.api_method_proxy_any]
 }
 
-resource "aws_api_gateway_integration_response" "api_integration_response_proxy_get" {
-  http_method = "GET"
+resource "aws_api_gateway_integration_response" "api_integration_response_proxy_any" {
+  http_method = "ANY"
   resource_id = aws_api_gateway_resource.api_resource_proxy.id
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
   status_code = "200"
 
-  depends_on = [aws_api_gateway_integration.api_integration_proxy_get]
+  depends_on = [aws_api_gateway_integration.api_integration_proxy_any]
 }
 
-resource "aws_api_gateway_method_response" "api_method_response_proxy_get" {
-  http_method = "GET"
+resource "aws_api_gateway_method_response" "api_method_response_proxy_any" {
+  http_method = "ANY"
   resource_id = aws_api_gateway_resource.api_resource_proxy.id
 
   response_models = {
@@ -339,7 +303,7 @@ resource "aws_api_gateway_method_response" "api_method_response_proxy_get" {
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
   status_code = "200"
 
-  depends_on = [aws_api_gateway_integration_response.api_integration_response_proxy_get]
+  depends_on = [aws_api_gateway_integration_response.api_integration_response_proxy_any]
 }
 
 # S3 report lambda permission
@@ -348,7 +312,7 @@ resource "aws_lambda_permission" "s3_report_url_permission" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.s3_report_url.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.rest_api.execution_arn}/*/GET/*"
+  source_arn    = "${aws_api_gateway_rest_api.rest_api.execution_arn}/*/*"
 }
 
 # CloudWatch Group for enable logging
@@ -372,10 +336,10 @@ resource "aws_api_gateway_deployment" "rest_api_deployment" {
     #       It will stabilize to only change when resources change afterwards.
     redeployment = sha1(jsonencode([
       aws_api_gateway_resource.api_resource_proxy.id,
-      aws_api_gateway_method.api_method_proxy_get,
-      aws_api_gateway_method_response.api_method_response_proxy_get.id,
-      aws_api_gateway_integration.api_integration_proxy_get.id,
-      aws_api_gateway_integration_response.api_integration_response_proxy_get.id
+      aws_api_gateway_method.api_method_proxy_any,
+      aws_api_gateway_method_response.api_method_response_proxy_any.id,
+      aws_api_gateway_integration.api_integration_proxy_any.id,
+      aws_api_gateway_integration_response.api_integration_response_proxy_any.id
     ]))
   }
 
@@ -388,13 +352,6 @@ resource "aws_api_gateway_stage" "rest_api_stage" {
   deployment_id = aws_api_gateway_deployment.rest_api_deployment.id
   rest_api_id   = aws_api_gateway_rest_api.rest_api.id
   stage_name    = "external"
-
-  # # Enable Detailed Access Logging to CloudWatch Logs
-  # access_log_settings {
-  #   destination_arn = aws_cloudwatch_log_group.rest_api_log_group.arn
-  #   format          = jsonencode({ "requestId" : "$context.requestId", "ip" : "$context.identity.sourceIp", "caller" : "$context.identity.caller", "user" : "$context.identity.user", "requestTime" : "$context.requestTime", "httpMethod" : "$context.httpMethod", "resourcePath" : "$context.resourcePath", "status" : "$context.status", "protocol" : "$context.protocol", "responseLength" : "$context.responseLength" })
-  # }
-
 }
 
 resource "aws_api_gateway_method_settings" "rest_api_log_setting" {
@@ -427,5 +384,5 @@ resource "aws_api_gateway_base_path_mapping" "api_bpm" {
   api_id      = aws_api_gateway_rest_api.rest_api.id
   stage_name  = aws_api_gateway_stage.rest_api_stage.stage_name
   domain_name = aws_api_gateway_domain_name.custom_domain.domain_name
-  # base_path   = "test"
+  base_path   = "presign"
 }

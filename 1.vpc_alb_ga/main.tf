@@ -202,7 +202,7 @@ resource "aws_lb_target_group" "alb_api_endpoint_tg" {
 resource "aws_lb_target_group" "alb_s3_endpoint_tg" {
   target_type      = "ip"
   name             = upper("${var.environment_name}-TG-S3-ENDPOINT")
-  port             = "443"
+  port             = "80"
   protocol         = "HTTP"
   protocol_version = "HTTP1"
   vpc_id           = aws_vpc.test_vpc.id
@@ -253,12 +253,6 @@ data "aws_acm_certificate" "default_cert" {
 resource "aws_lb_listener" "alb_listener" {
   certificate_arn = data.aws_acm_certificate.default_cert.arn
 
-  # default_action {
-  #   order            = "1"
-  #   target_group_arn = aws_lb_target_group.alb_api_endpoint_tg.arn
-  #   type             = "forward"
-  # }
-
   default_action {
     type = "fixed-response"
 
@@ -306,14 +300,3 @@ resource "aws_lb_listener_rule" "alb_s3_endpoint_listener_443" {
     }
   }
 }
-
-# #Integrate certs to 443 port listener
-# resource "aws_lb_listener_certificate" "listener_443_cert_default" {
-#   listener_arn    = aws_lb_listener.alb_api_endpoint_listener_443.arn
-#   certificate_arn = data.aws_acm_certificate.default_cert.arn
-# }
-
-# resource "aws_lb_listener_certificate" "listener_443_cert_s3" {
-#   listener_arn    = aws_lb_listener.alb_api_endpoint_listener_443.arn
-#   certificate_arn = data.aws_acm_certificate.s3_cert.arn
-# }

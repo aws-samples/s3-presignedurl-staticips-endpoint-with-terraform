@@ -35,3 +35,8 @@ terraform-provider-*
 *.log
 *.lock.hcl
 terraform/.DS_Store
+
+# Ignore the .terraform directory
+**/lambda_code/
+
+.DS_Store
