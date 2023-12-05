@@ -205,6 +205,10 @@ resource "aws_lambda_function" "s3_report_url" {
   layers = [
     "arn:aws:lambda:ap-northeast-2:580247275435:layer:LambdaInsightsExtension:37"
   ]
+  tracing_config {
+    mode = "Active"
+  }
+  reserved_concurrent_executions = 100
 
   environment {
     variables = {
@@ -215,7 +219,6 @@ resource "aws_lambda_function" "s3_report_url" {
 
 #API Gateway
 resource "aws_api_gateway_rest_api" "rest_api" {
-  api_key_source               = "AUTHORIZER"
   binary_media_types           = ["*/*", "application/pdf"]
   disable_execute_api_endpoint = "false"
 
@@ -226,6 +229,10 @@ resource "aws_api_gateway_rest_api" "rest_api" {
 
   minimum_compression_size = "-1"
   name                     = upper("${var.environment_name}-PRIVATE-API")
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 data "aws_iam_policy_document" "rest_api_policy_document" {
@@ -318,7 +325,7 @@ resource "aws_lambda_permission" "s3_report_url_permission" {
 # CloudWatch Group for enable logging
 resource "aws_cloudwatch_log_group" "rest_api_log_group" {
   name              = "/aws/api-gateway/${aws_api_gateway_rest_api.rest_api.name}"
-  retention_in_days = 7
+  retention_in_days = 365
 }
 
 
@@ -352,6 +359,12 @@ resource "aws_api_gateway_stage" "rest_api_stage" {
   deployment_id = aws_api_gateway_deployment.rest_api_deployment.id
   rest_api_id   = aws_api_gateway_rest_api.rest_api.id
   stage_name    = "external"
+  # cache_cluster_enabled = true
+  xray_tracing_enabled = true
+  # access_log_settings {
+  #   destination_arn = aws_cloudwatch_log_group.rest_api_log_group.arn
+  #   format = "$context.extendedRequestId $context.identity.sourceIp $context.identity.caller $context.identity.user [$context.requestTime] \"$context.httpMethod $context.resourcePath $context.protocol\" $context.status $context.responseLength $context.requestId"
+  # }
 }
 
 resource "aws_api_gateway_method_settings" "rest_api_log_setting" {
@@ -360,7 +373,10 @@ resource "aws_api_gateway_method_settings" "rest_api_log_setting" {
   method_path = "*/*"
 
   settings {
-    metrics_enabled = true
+    caching_enabled      = true
+    metrics_enabled      = true
+    cache_data_encrypted = true
+    data_trace_enabled   = false
   }
 }
 
@@ -375,6 +391,7 @@ data "aws_acm_certificate" "default_cert" {
 resource "aws_api_gateway_domain_name" "custom_domain" {
   regional_certificate_arn = data.aws_acm_certificate.default_cert.arn
   domain_name     = "${var.s3_bucket_prefix}.${var.domain}"
+  security_policy = "TLS_1_2"
   endpoint_configuration {
     types = ["REGIONAL"]
   }

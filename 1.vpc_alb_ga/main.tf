@@ -63,10 +63,41 @@ resource "aws_route_table_association" "private_subnet_association_2" {
   route_table_id = aws_route_table.private_route_table_2.id
 }
 
+# Log S3 Bucket
+resource "aws_s3_bucket" "log_bucket" {
+  bucket = "${var.environment_name}-log-bucket"
+
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "log_bucket_server_side_encryption_configuration" {
+  bucket = aws_s3_bucket.log_bucket.id
+
+  rule {
+    bucket_key_enabled = true
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "log_bucket_public_access_block" {
+  bucket                  = aws_s3_bucket.log_bucket.id
+  block_public_acls       = "true"
+  ignore_public_acls      = "true"
+  block_public_policy     = "true"
+  restrict_public_buckets = "true"
+}
+
 # Global Accelerator
 resource "aws_globalaccelerator_accelerator" "global_accelerator" {
   name            = upper("${var.environment_name}-GLOBAL-ACCELERATOR")
   ip_address_type = "IPV4"
+
+  attributes {
+   flow_logs_enabled   = true
+   flow_logs_s3_bucket = aws_s3_bucket.log_bucket.bucket
+   flow_logs_s3_prefix = "global_acclerator/"
+  }
 }
 
 # SG for ALB routing to API
@@ -76,20 +107,22 @@ resource "aws_security_group" "sg_alb_to_api_endpoint" {
   vpc_id      = aws_vpc.test_vpc.id
 
   ingress {
+    description = "Inbound from GA"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  # ingress {
+  #   from_port   = 80
+  #   to_port     = 80
+  #   protocol    = "tcp"
+  #   cidr_blocks = ["0.0.0.0/0"]
+  # }
 
   egress {
+    description = "Outbound"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -107,6 +140,7 @@ resource "aws_security_group" "sg_vpc_endpoint" {
   vpc_id      = aws_vpc.test_vpc.id
 
   ingress {
+    description = "Inbound from ALB"
     from_port       = 443
     to_port         = 443
     protocol        = "tcp"
@@ -114,6 +148,7 @@ resource "aws_security_group" "sg_vpc_endpoint" {
   }
 
   ingress {
+    description = "Inbound from ALB"
     from_port       = 80
     to_port         = 80
     protocol        = "tcp"
@@ -121,6 +156,7 @@ resource "aws_security_group" "sg_vpc_endpoint" {
   }
 
   egress {
+    description = "Outbound"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -174,6 +210,15 @@ resource "aws_lb" "alb_to_api_endpoint" {
   internal           = true
   security_groups    = [aws_security_group.sg_alb_to_api_endpoint.id]
   subnets            = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
+  enable_deletion_protection = true
+  drop_invalid_header_fields = true
+
+
+  # access_logs {
+  #   bucket  = aws_s3_bucket.log_bucket.bucket
+  #   prefix  = "test-lb"
+  #   enabled = true
+  # }
 }
 
 #API Endpoint Target group
