@@ -9,6 +9,10 @@ data "aws_globalaccelerator_accelerator" "global_accelerator" {
   name = upper("${var.environment_name}-GLOBAL-ACCELERATOR")
 }
 
+data "aws_s3_bucket" "log_bucket" {
+  bucket = "${var.environment_name}-log-bucket"
+}
+
 resource "aws_route53_record" "www" {
   zone_id = data.aws_route53_zone.public_domain_zone.zone_id
   name    = "${var.s3_bucket_prefix}.${var.domain}"
@@ -138,6 +142,20 @@ resource "aws_s3_bucket_public_access_block" "s3_bucket_public_access_block" {
   ignore_public_acls      = "true"
   block_public_policy     = "true"
   restrict_public_buckets = "true"
+}
+
+ resource "aws_s3_bucket_logging" "s3_logging" {
+   bucket = aws_s3_bucket.s3_bucket.id
+
+   target_bucket = data.aws_s3_bucket.log_bucket.id
+   target_prefix = "s3_log/"
+ }
+
+resource "aws_s3_bucket_versioning" "s3_versioning" {
+  bucket = aws_s3_bucket.s3_bucket.id
+  versioning_configuration {
+    status = "Enabled"
+  }
 }
 
 #S3 Endpoint Lambda function

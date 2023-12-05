@@ -8,6 +8,10 @@ resource "aws_vpc" "test_vpc" {
   }
 }
 
+resource "aws_default_security_group" "default" {
+  vpc_id = aws_vpc.test_vpc.id
+}
+
 # Create two private subnets
 resource "aws_subnet" "private_subnet_1" {
   vpc_id                  = aws_vpc.test_vpc.id
@@ -86,6 +90,20 @@ resource "aws_s3_bucket_public_access_block" "log_bucket_public_access_block" {
   ignore_public_acls      = "true"
   block_public_policy     = "true"
   restrict_public_buckets = "true"
+}
+
+ resource "aws_s3_bucket_logging" "s3_logging" {
+   bucket = aws_s3_bucket.log_bucket.id
+
+   target_bucket = aws_s3_bucket.log_bucket.id
+   target_prefix = "s3_log/"
+ }
+
+resource "aws_s3_bucket_versioning" "s3_versioning" {
+  bucket = aws_s3_bucket.log_bucket.id
+  versioning_configuration {
+    status = "Enabled"
+  }
 }
 
 # Global Accelerator
