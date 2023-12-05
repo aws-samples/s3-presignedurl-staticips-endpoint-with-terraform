@@ -1,3 +1,5 @@
+data "aws_caller_identity" "self" {}
+
 # Create VPC
 resource "aws_vpc" "test_vpc" {
   cidr_block = "10.0.0.0/16"
@@ -6,6 +8,13 @@ resource "aws_vpc" "test_vpc" {
   tags = {
     Name = "apg-test-vpc"
   }
+}
+
+resource "aws_flow_log" "example" {
+  log_destination      = aws_s3_bucket.log_bucket.arn
+  log_destination_type = "s3"
+  traffic_type         = "ALL"
+  vpc_id          = aws_vpc.test_vpc.id
 }
 
 resource "aws_default_security_group" "default" {
@@ -104,6 +113,24 @@ resource "aws_s3_bucket_versioning" "s3_versioning" {
   versioning_configuration {
     status = "Enabled"
   }
+}
+
+resource "aws_s3_bucket_policy" "example_bucket_policy" {
+  bucket = aws_s3_bucket.log_bucket.bucket
+
+  policy = jsonencode({
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::600734575887:root"
+      },
+      "Action": "s3:PutObject",
+      "Resource": "${aws_s3_bucket.log_bucket.arn}/lb-logs/AWSLogs/${data.aws_caller_identity.self.account_id}/*"
+    }
+  ]
+})
 }
 
 # Global Accelerator
@@ -231,12 +258,11 @@ resource "aws_lb" "alb_to_api_endpoint" {
   enable_deletion_protection = true
   drop_invalid_header_fields = true
 
-
-  # access_logs {
-  #   bucket  = aws_s3_bucket.log_bucket.bucket
-  #   prefix  = "test-lb"
-  #   enabled = true
-  # }
+  access_logs {
+    bucket  = aws_s3_bucket.log_bucket.bucket
+    prefix  = "lb-logs"
+    enabled = true
+  }
 }
 
 #API Endpoint Target group
