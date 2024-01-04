@@ -120,11 +120,6 @@ The response will return with a 301 redirect status code containing the presigne
 
 
 # Clean Up
-### Clean Up CDK Deployment
-`$ cdk destroy`
-
-### Delete S3 Buckets
-Empty and delete the S3 Buckets(object bucket, log bucket) which created by the stack.
 
 
 # References
