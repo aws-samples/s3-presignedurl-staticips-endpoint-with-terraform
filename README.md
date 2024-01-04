@@ -131,3 +131,13 @@ https://aws.amazon.com/blogs/networking-and-content-delivery/hosting-internal-ht
 
 ### Generate presigned URL with JavaScript
 https://aws.amazon.com/blogs/developer/generate-presigned-url-modular-aws-sdk-javascript/
+
+# Security
+
+See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+
+# License
+
+This library is licensed under the MIT-0 License. See the LICENSE file.
+
+>>>>>>> 740aa9c (Initial commit)
