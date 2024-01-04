@@ -80,7 +80,7 @@ provider "aws" {
 ### Provision Network Resources
 Execute the commands below to create network resources
 ```
-cd ./2.vpc_alb_ga
+cd ./1.vpc_alb_ga
 terraform init
 terraform plan --var-file=apg.tfvars
 terraform apply --var-file=apg.tfvars
@@ -120,6 +120,25 @@ The response will return with a 301 redirect status code containing the presigne
 
 
 # Clean Up
+### Destroy API G/W, S3, Lambda
+Execute the commands below to delete resources
+```
+cd ./2.apigw_s3_lambda
+terraform init
+terraform plan --destroy --var-file=apg.tfvars
+terraform destroy --var-file=apg.tfvars
+```
+In the middle of apply command, type ‘yes’ to prompt.
+
+## Destroy Network Resources
+Execute the commands below to delete network resources
+```
+cd ./1.vpc_alb_ga
+terraform init
+terraform plan --destroy --var-file=apg.tfvars
+terraform destroy --var-file=apg.tfvars
+```
+In the middle of apply command, type ‘yes’ to prompt.
 
 
 # References
