@@ -120,7 +120,7 @@ The response will return with a 301 redirect status code containing the presigne
 
 
 # Clean Up
-### Destroy API G/W, S3, Lambda
+## Destroy API G/W, S3, Lambda
 Execute the commands below to delete resources
 ```
 cd ./2.apigw_s3_lambda
