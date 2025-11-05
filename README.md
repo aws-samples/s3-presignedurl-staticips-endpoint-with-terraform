@@ -1,9 +1,9 @@
-# Consolidate S3 Presigned URL Generation and Object Downloads via an Endpoint Associated with Static IPs
+# Consolidate Amazon S3 presigned URL generation and object downloads by using an endpoint associated with static IP addresses
 
 # Summary
-This solution simplifies access to Amazon S3 by creating secure, custom presigned URLs for object downloads through a single endpoint with a unique domain and static IPs. It's tailored for clients who require consolidation of both API and S3 endpoints under a unified domain with static IPs. The use case involves users following an IP and domain Allowlist firewall policy, limiting API access to specific domains and IPs.
+[This pattern](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/consolidate-amazon-s3-presigned-url-generation-and-object-downloads-by-using-an-endpoint-associated-with-static-ip-addresses.html) simplifies access to Amazon Simple Storage Service (Amazon S3) by creating secure, custom presigned URLs for object downloads. The solution provides a single endpoint with a unique domain and static IP addresses. It's tailored for customers who require consolidation of both API and Amazon S3 endpoints under a unified domain with static IP addresses. The use case involves users following an IP and domain allowlist firewall policy, limiting API access to specific domains and IP addresses.
 
-The architecture employs key AWS services, including AWS Global Accelerator, Amazon API Gateway, AWS Lambda, Application Load Balancer(ALB), VPC Endpoint, and Amazon S3. This design centralizes the API for generating presigned URLs and the S3 endpoint under a single domain, linked to an AWS Global Accelerator with two static IPs. Consequently, users can effortlessly request presigned URLs and download S3 objects through a unified domain endpoint with static IPs.
+The architecture employs key AWS services, including AWS Global Accelerator, Amazon API Gateway, AWS Lambda, Application Load Balancer, AWS PrivateLink, and Amazon S3. This design centralizes the API for generating presigned URLs and the Amazon S3 endpoint under a single domain, linked to an accelerator with two static IP addresses. Consequently, users can effortlessly request presigned URLs and download Amazon S3 objects through a unified domain endpoint with static IP addresses.
 
 This architecture is especially beneficial for customers with strict policies or compliance requirements, such as those in the public, medical, and finance sectors.
 
